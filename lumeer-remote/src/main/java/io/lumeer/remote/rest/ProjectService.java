@@ -27,7 +27,6 @@ import io.lumeer.api.model.Project;
 import io.lumeer.core.WorkspaceKeeper;
 import io.lumeer.core.facade.ProjectFacade;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Set;
 import javax.annotation.PostConstruct;
@@ -101,6 +100,12 @@ public class ProjectService extends AbstractService {
    }
 
    @GET
+   @Path("info/codes")
+   public Set<String> getProjectsCodes() {
+      return projectFacade.getProjectsCodes();
+   }
+
+   @GET
    @Path("{projectCode}/permissions")
    public JsonPermissions getProjectPermissions(@PathParam("projectCode") String projectCode) {
       Permissions permissions = projectFacade.getProjectPermissions(projectCode);
@@ -115,11 +120,11 @@ public class ProjectService extends AbstractService {
    }
 
    @DELETE
-   @Path("{projectCode}/permissions/users/{user}")
-   public Response removeUserPermission(@PathParam("projectCode") String projectCode, @PathParam("user") String user) {
-      projectFacade.removeUserPermission(projectCode, user);
+   @Path("{projectCode}/permissions/users/{userId}")
+   public Response removeUserPermission(@PathParam("projectCode") String projectCode, @PathParam("userId") String userId) {
+      projectFacade.removeUserPermission(projectCode, userId);
 
-      return Response.ok().link(getParentUri("users", user), "parent").build();
+      return Response.ok().link(getParentUri("users", userId), "parent").build();
    }
 
    @PUT
@@ -130,11 +135,11 @@ public class ProjectService extends AbstractService {
    }
 
    @DELETE
-   @Path("{projectCode}/permissions/groups/{group}")
-   public Response removeGroupPermission(@PathParam("projectCode") String projectCode, @PathParam("group") String group) {
-      projectFacade.removeGroupPermission(projectCode, group);
+   @Path("{projectCode}/permissions/groups/{groupId}")
+   public Response removeGroupPermission(@PathParam("projectCode") String projectCode, @PathParam("groupId") String groupId) {
+      projectFacade.removeGroupPermission(projectCode, groupId);
 
-      return Response.ok().link(getParentUri("groups", group), "parent").build();
+      return Response.ok().link(getParentUri("groups", groupId), "parent").build();
    }
 
 }

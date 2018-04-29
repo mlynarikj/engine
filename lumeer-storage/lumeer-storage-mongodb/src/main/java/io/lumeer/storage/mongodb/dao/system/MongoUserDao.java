@@ -113,7 +113,17 @@ public class MongoUserDao extends SystemScopedDao implements UserDao {
             throw new StorageException("User '" + userId + "' has not been deleted.");
          }
       } catch (MongoException ex) {
-         throw new StorageException("Cannot remove user " + userId, ex);
+         throw new StorageException("Cannot remove organization " + organizationId + "from user " + userId, ex);
+      }
+   }
+
+   @Override
+   public void deleteUsersGroups(final String organizationId) {
+      Bson pullUser = Updates.pull(UserCodec.ALL_GROUPS, Filters.eq(UserCodec.ORGANIZATION_ID, organizationId));
+      try {
+         databaseCollection().updateMany(new BsonDocument(), pullUser);
+      } catch (MongoException ex) {
+         throw new StorageException("Cannot remove organization " + organizationId + " from users", ex);
       }
    }
 
@@ -136,6 +146,13 @@ public class MongoUserDao extends SystemScopedDao implements UserDao {
       Bson emailFilter = Filters.eq(UserCodec.EMAIL, email);
 
       return databaseCollection().find(emailFilter).first();
+   }
+
+   @Override
+   public User getUserByKeycloakId(final String keycloakId) {
+      Bson keycloakIdFilter = Filters.eq(UserCodec.KEYCLOAK_ID, keycloakId);
+
+      return databaseCollection().find(keycloakIdFilter).first();
    }
 
    @Override

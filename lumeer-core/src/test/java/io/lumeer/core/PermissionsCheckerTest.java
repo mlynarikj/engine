@@ -54,20 +54,21 @@ public class PermissionsCheckerTest {
       Mockito.when(userCache.getUser(USER)).thenReturn(user);
 
       AuthenticatedUser authenticatedUser = Mockito.mock(AuthenticatedUser.class);
-      Mockito.when(authenticatedUser.getCurrentUsername()).thenReturn(USER);
+      AuthenticatedUserGroups authenticatedUserGroups = Mockito.mock(AuthenticatedUserGroups.class);
+      Mockito.when(authenticatedUser.getCurrentUserId()).thenReturn(USER);
       Mockito.when(authenticatedUser.getUserEmail()).thenReturn(USER);
-      Mockito.when(authenticatedUser.getCurrentUserGroups()).thenReturn(Collections.singleton(GROUP));
+      Mockito.when(authenticatedUserGroups.getCurrentUserGroups()).thenReturn(Collections.singleton(GROUP));
 
-      permissionsChecker = new PermissionsChecker(userCache, authenticatedUser);
+      permissionsChecker = new PermissionsChecker(userCache, authenticatedUser, authenticatedUserGroups);
    }
 
    private Resource prepareResource(Set<Role> userRoles, Set<Role> groupRoles) {
       Permission userPermission = Mockito.mock(Permission.class);
-      Mockito.when(userPermission.getName()).thenReturn(USER);
+      Mockito.when(userPermission.getId()).thenReturn(USER);
       Mockito.when(userPermission.getRoles()).thenReturn(userRoles);
 
       Permission groupPermission = Mockito.mock(Permission.class);
-      Mockito.when(groupPermission.getName()).thenReturn(GROUP);
+      Mockito.when(groupPermission.getId()).thenReturn(GROUP);
       Mockito.when(groupPermission.getRoles()).thenReturn(groupRoles);
 
       Permissions permissions = Mockito.mock(Permissions.class);

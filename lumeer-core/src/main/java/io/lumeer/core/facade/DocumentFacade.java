@@ -24,6 +24,7 @@ import io.lumeer.api.model.Collection;
 import io.lumeer.api.model.Document;
 import io.lumeer.api.model.Pagination;
 import io.lumeer.api.model.Role;
+import io.lumeer.core.AuthenticatedUserGroups;
 import io.lumeer.core.util.DocumentUtils;
 import io.lumeer.engine.api.data.DataDocument;
 import io.lumeer.storage.api.dao.CollectionDao;
@@ -34,6 +35,7 @@ import io.lumeer.storage.api.query.SearchQuery;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -57,12 +59,14 @@ public class DocumentFacade extends AbstractFacade {
    @Inject
    private DocumentDao documentDao;
 
-
    @Inject
    private LinkInstanceDao linkInstanceDao;
 
-   public Document createDocument(String collectionCode, Document document) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   @Inject
+   private AuthenticatedUserGroups authenticatedUserGroups;
+
+   public Document createDocument(String collectionId, Document document) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.WRITE);
 
       DataDocument data = DocumentUtils.checkDocumentKeysValidity(document.getData());
@@ -72,45 +76,31 @@ public class DocumentFacade extends AbstractFacade {
       DataDocument storedData = dataDao.createData(collection.getId(), storedDocument.getId(), data);
       storedDocument.setData(storedData);
 
-      updateCollectionMetadataOnCreation(collection, data);
+      updateCollectionMetadata(collection, data.keySet(), Collections.emptySet(), 1);
 
       return storedDocument;
    }
 
    private Document createDocument(Collection collection, Document document) {
       document.setCollectionId(collection.getId());
-      document.setCreatedBy(authenticatedUser.getCurrentUsername());
+      document.setCreatedBy(authenticatedUser.getCurrentUserId());
       document.setCreationDate(LocalDateTime.now());
       document.setDataVersion(INITIAL_VERSION);
       return documentDao.createDocument(document);
    }
 
-   private void updateCollectionMetadataOnCreation(Collection collection, DataDocument data) {
-      Map<String, Attribute> oldAttributes = collection.getAttributes().stream()
-                                                       .collect(Collectors.toMap(Attribute::getFullName, Function.identity()));
-      Set<Attribute> newAttributes = new LinkedHashSet<>();
-
-      Set<String> attributeNames = DocumentUtils.getDocumentAttributes(data);
-      attributeNames.forEach(attributeName -> {
-         if (oldAttributes.containsKey(attributeName)) {
-            Attribute attribute = oldAttributes.get(attributeName);
-            attribute.setUsageCount(attribute.getUsageCount() + 1);
-         } else {
-            Attribute attribute = new JsonAttribute(attributeName, attributeName, Collections.emptySet(), 1);
-            newAttributes.add(attribute);
-         }
-      });
-
-      newAttributes.addAll(oldAttributes.values());
-      collection.setAttributes(newAttributes);
-      collection.setDocumentsCount(collection.getDocumentsCount() + 1);
-      collection.setLastTimeUsed(LocalDateTime.now());
-      collectionDao.updateCollection(collection.getId(), collection);
-   }
-
-   public Document updateDocumentData(String collectionCode, String documentId, DataDocument data) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public Document updateDocumentData(String collectionId, String documentId, DataDocument data) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.WRITE);
+
+      DataDocument oldData = dataDao.getData(collectionId, documentId);
+      Set<String> attributesToAdd = new HashSet<>(data.keySet());
+      attributesToAdd.removeAll(oldData.keySet());
+
+      Set<String> attributesToDec = new HashSet<>(oldData.keySet());
+      attributesToDec.removeAll(data.keySet());
+
+      updateCollectionMetadata(collection, attributesToAdd, attributesToDec, 0);
 
       // TODO archive the old document
       DataDocument updatedData = dataDao.updateData(collection.getId(), documentId, data);
@@ -121,9 +111,16 @@ public class DocumentFacade extends AbstractFacade {
       return updatedDocument;
    }
 
-   public Document patchDocumentData(String collectionCode, String documentId, DataDocument data) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public Document patchDocumentData(String collectionId, String documentId, DataDocument data) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.WRITE);
+
+      DataDocument oldData = dataDao.getData(collectionId, documentId);
+
+      Set<String> attributesToAdd = new HashSet<>(data.keySet());
+      attributesToAdd.removeAll(oldData.keySet());
+
+      updateCollectionMetadata(collection, attributesToAdd, Collections.emptySet(), 0);
 
       // TODO archive the old document
       DataDocument patchedData = dataDao.patchData(collection.getId(), documentId, data);
@@ -138,30 +135,66 @@ public class DocumentFacade extends AbstractFacade {
       Document document = documentDao.getDocumentById(documentId);
 
       document.setCollectionId(collection.getId());
-      document.setUpdatedBy(authenticatedUser.getCurrentUsername());
+      document.setUpdatedBy(authenticatedUser.getCurrentUserId());
       document.setUpdateDate(LocalDateTime.now());
       document.setDataVersion(document.getDataVersion() + 1);
 
       return documentDao.updateDocument(document.getId(), document);
    }
 
-   public void deleteDocument(String collectionCode, String documentId) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public void deleteDocument(String collectionId, String documentId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.WRITE);
 
+      DataDocument data = dataDao.getData(collectionId, documentId);
+      updateCollectionMetadata(collection, Collections.emptySet(), data.keySet(), -1);
+
       documentDao.deleteDocument(documentId);
-
       dataDao.deleteData(collection.getId(), documentId);
-
       linkInstanceDao.deleteLinkInstances(createQueryForLinkInstances(documentId));
    }
 
-   public Document getDocument(String collectionCode, String documentId) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   private void updateCollectionMetadata(Collection collection, Set<String> attributesToInc, Set<String> attributesToDec, int documentCountDiff) {
+      Map<String, Attribute> oldAttributes = collection.getAttributes().stream()
+                                                       .collect(Collectors.toMap(Attribute::getFullName, Function.identity()));
+
+      oldAttributes.keySet().forEach(attributeName -> {
+         if (attributesToInc.contains(attributeName)) {
+            Attribute attribute = oldAttributes.get(attributeName);
+            attribute.setUsageCount(attribute.getUsageCount() + 1);
+            attributesToInc.remove(attributeName);
+         } else if (attributesToDec.contains(attributeName)) {
+            Attribute attribute = oldAttributes.get(attributeName);
+            attribute.setUsageCount(Math.max(attribute.getUsageCount() - 1, 0));
+         }
+
+      });
+
+      Set<Attribute> newAttributes = attributesToInc.stream()
+                                                    .map(attributeName -> new JsonAttribute(extractAttributeName(attributeName), attributeName, Collections.emptySet(), 1))
+                                                    .collect(Collectors.toSet());
+
+      newAttributes.addAll(oldAttributes.values());
+
+      collection.setAttributes(newAttributes);
+      collection.setLastTimeUsed(LocalDateTime.now());
+      collection.setDocumentsCount(collection.getDocumentsCount() + documentCountDiff);
+      collectionDao.updateCollection(collection.getId(), collection);
+   }
+
+   private String extractAttributeName(String attributeName) {
+      if (!attributeName.contains(".")) {
+         return attributeName;
+      }
+      String[] parts = attributeName.split(".");
+      return parts[parts.length - 1];
+   }
+
+   public Document getDocument(String collectionId, String documentId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.READ);
 
       Document document = documentDao.getDocumentById(documentId);
-      document.setCollectionCode(collectionCode);
 
       DataDocument data = dataDao.getData(collection.getId(), documentId);
       document.setData(data);
@@ -169,13 +202,13 @@ public class DocumentFacade extends AbstractFacade {
       return document;
    }
 
-   public List<Document> getDocuments(String collectionCode, Pagination pagination) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public List<Document> getDocuments(String collectionId, Pagination pagination) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.READ);
 
       Map<String, DataDocument> dataDocuments = getDataDocuments(collection.getId(), pagination);
 
-      return getDocuments(collectionCode, dataDocuments);
+      return getDocuments(dataDocuments);
    }
 
    private Map<String, DataDocument> getDataDocuments(String collectionId, Pagination pagination) {
@@ -184,19 +217,16 @@ public class DocumentFacade extends AbstractFacade {
                     .collect(Collectors.toMap(DataDocument::getId, Function.identity()));
    }
 
-   private List<Document> getDocuments(String collectionCode, Map<String, DataDocument> dataDocuments) {
+   private List<Document> getDocuments(Map<String, DataDocument> dataDocuments) {
       String[] documentIds = dataDocuments.keySet().toArray(new String[] {});
       List<Document> documents = documentDao.getDocumentsByIds(documentIds);
-      documents.forEach(document -> {
-         document.setCollectionCode(collectionCode);
-         document.setData(dataDocuments.get(document.getId()));
-      });
+      documents.forEach(document -> document.setData(dataDocuments.get(document.getId())));
       return documents;
    }
 
    private SearchQuery createQueryForLinkInstances(String documentId) {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       return SearchQuery.createBuilder(user).groups(groups)
                         .documentIds(Collections.singleton(documentId))

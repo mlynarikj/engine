@@ -119,13 +119,13 @@
       <!-- Test dependencies  -->
       <version.arquillian>1.1.11.Final</version.arquillian>
       <version.arquillian-container>2.0.0.Final</version.arquillian-container>
-      <version.wildfly>10.1.0.Final</version.wildfly>
+      <version.wildfly>12.0.0.Final</version.wildfly>
       <version.javassist>3.20.0-GA</version.javassist>
       <version.amq>5.14.0</version.amq>
       <version.arquillian-jacoco>1.0.0.Alpha8</version.arquillian-jacoco>
       <version.mockito>2.8.47</version.mockito>
       <version.junit>4.12</version.junit>
-      <version.embedded.mongodb>2.0.1</version.embedded.mongodb>
+      <version.embedded.mongodb>2.0.3</version.embedded.mongodb>
 
       <java.level>1.8</java.level>
    </properties>

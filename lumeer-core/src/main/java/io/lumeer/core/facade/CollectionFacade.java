@@ -27,6 +27,7 @@ import io.lumeer.api.model.Permissions;
 import io.lumeer.api.model.Project;
 import io.lumeer.api.model.ResourceType;
 import io.lumeer.api.model.Role;
+import io.lumeer.core.AuthenticatedUserGroups;
 import io.lumeer.core.model.SimplePermission;
 import io.lumeer.core.util.CodeGenerator;
 import io.lumeer.storage.api.dao.CollectionDao;
@@ -62,22 +63,25 @@ public class CollectionFacade extends AbstractFacade {
    @Inject
    private LinkInstanceDao linkInstanceDao;
 
+   @Inject
+   private AuthenticatedUserGroups authenticatedUserGroups;
+
    public Collection createCollection(Collection collection) {
       checkProjectWriteRole();
 
       Collection storedCollection = createCollectionMetadata(collection);
       dataDao.createDataRepository(storedCollection.getId());
 
-      return keepOnlyActualUserRoles(storedCollection);
+      return storedCollection;
    }
 
-   public Collection updateCollection(String collectionCode, Collection collection) {
-      Collection storedCollection = collectionDao.getCollectionByCode(collectionCode);
+   public Collection updateCollection(String collectionId, Collection collection) {
+      Collection storedCollection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(storedCollection, Role.MANAGE);
 
       keepUnmodifiableFields(collection, storedCollection);
       Collection updatedCollection = collectionDao.updateCollection(storedCollection.getId(), collection);
-      return keepOnlyActualUserRoles(updatedCollection);
+      return mapResource(updatedCollection);
    }
 
    private void keepUnmodifiableFields(Collection collection, Collection storedCollection) {
@@ -88,11 +92,10 @@ public class CollectionFacade extends AbstractFacade {
       collection.setLastTimeUsed(storedCollection.getLastTimeUsed());
    }
 
-   public void deleteCollection(String collectionCode) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public void deleteCollection(String collectionId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
-      String collectionId = collection.getId();
       collectionDao.deleteCollection(collectionId);
       documentDao.deleteDocuments(collectionId);
       dataDao.deleteDataRepository(collectionId);
@@ -105,17 +108,18 @@ public class CollectionFacade extends AbstractFacade {
       }
    }
 
-   public Collection getCollection(String collectionCode) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public Collection getCollection(String collectionId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.READ);
 
-      return keepOnlyActualUserRoles(collection);
+      return mapResource(collection);
    }
 
    public List<Collection> getCollections(Pagination pagination) {
       SearchQuery searchQuery = createPaginationQuery(pagination);
+
       return collectionDao.getCollections(searchQuery).stream()
-                          .map(this::keepOnlyActualUserRoles)
+                          .map(this::mapResource)
                           .collect(Collectors.toList());
    }
 
@@ -123,8 +127,8 @@ public class CollectionFacade extends AbstractFacade {
       return collectionDao.getAllCollectionNames();
    }
 
-   public Attribute updateCollectionAttribute(String collectionCode, String attributeFullName, Attribute attribute) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public Attribute updateCollectionAttribute(String collectionId, String attributeFullName, Attribute attribute) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
       collection.updateAttribute(attributeFullName, attribute);
@@ -133,23 +137,23 @@ public class CollectionFacade extends AbstractFacade {
       return attribute;
    }
 
-   public void deleteCollectionAttribute(String collectionCode, String attributeFullName) {
-      Collection collection = collectionDao.getCollectionByCode(collectionCode);
+   public void deleteCollectionAttribute(String collectionId, String attributeFullName) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
       collection.deleteAttribute(attributeFullName);
       collectionDao.updateCollection(collection.getId(), collection);
    }
 
-   public Permissions getCollectionPermissions(final String code) {
-      Collection collection = collectionDao.getCollectionByCode(code);
+   public Permissions getCollectionPermissions(final String collectionId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
       return collection.getPermissions();
    }
 
-   public Set<Permission> updateUserPermissions(final String code, final Permission... userPermissions) {
-      Collection collection = collectionDao.getCollectionByCode(code);
+   public Set<Permission> updateUserPermissions(final String collectionId, final Permission... userPermissions) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
       collection.getPermissions().updateUserPermissions(userPermissions);
@@ -158,16 +162,16 @@ public class CollectionFacade extends AbstractFacade {
       return updatedCollection.getPermissions().getUserPermissions();
    }
 
-   public void removeUserPermission(final String code, final String user) {
-      Collection collection = collectionDao.getCollectionByCode(code);
+   public void removeUserPermission(final String collectionId, final String userId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
-      collection.getPermissions().removeUserPermission(user);
+      collection.getPermissions().removeUserPermission(userId);
       collectionDao.updateCollection(collection.getId(), collection);
    }
 
-   public Set<Permission> updateGroupPermissions(final String code, final Permission... groupPermissions) {
-      Collection collection = collectionDao.getCollectionByCode(code);
+   public Set<Permission> updateGroupPermissions(final String collectionId, final Permission... groupPermissions) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
       collection.getPermissions().updateGroupPermissions(groupPermissions);
@@ -176,11 +180,11 @@ public class CollectionFacade extends AbstractFacade {
       return updatedCollection.getPermissions().getGroupPermissions();
    }
 
-   public void removeGroupPermission(final String code, final String group) {
-      Collection collection = collectionDao.getCollectionByCode(code);
+   public void removeGroupPermission(final String collectionId, final String groupId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.MANAGE);
 
-      collection.getPermissions().removeGroupPermission(group);
+      collection.getPermissions().removeGroupPermission(groupId);
       collectionDao.updateCollection(collection.getId(), collection);
    }
 
@@ -198,7 +202,7 @@ public class CollectionFacade extends AbstractFacade {
          collection.setCode(generateCollectionCode(collection.getName()));
       }
 
-      Permission defaultUserPermission = new SimplePermission(authenticatedUser.getCurrentUsername(), Collection.ROLES);
+      Permission defaultUserPermission = new SimplePermission(authenticatedUser.getCurrentUserId(), Collection.ROLES);
       collection.getPermissions().updateUserPermissions(defaultUserPermission);
 
       return collectionDao.createCollection(collection);
@@ -210,8 +214,8 @@ public class CollectionFacade extends AbstractFacade {
    }
 
    private SearchQuery createQueryForLinkTypes(String collectionId) {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       return SearchQuery.createBuilder(user).groups(groups)
                         .collectionIds(Collections.singleton(collectionId))
@@ -219,8 +223,8 @@ public class CollectionFacade extends AbstractFacade {
    }
 
    private SearchQuery createQueryForLinkInstances(List<LinkType> linkTypes) {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       return SearchQuery.createBuilder(user).groups(groups)
                         .linkTypeIds(linkTypes.stream().map(LinkType::getId).collect(Collectors.toSet()))

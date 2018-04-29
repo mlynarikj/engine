@@ -38,6 +38,8 @@ import org.mongodb.morphia.query.Query;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.PostConstruct;
 import javax.enterprise.context.ApplicationScoped;
 
@@ -95,6 +97,14 @@ public class MorphiaOrganizationDao extends SystemScopedDao implements Organizat
    }
 
    @Override
+   public Set<String> getOrganizationsCodes() {
+      return datastore.createQuery(MorphiaOrganization.class)
+                      .asList().stream()
+                      .map(MorphiaOrganization::getCode)
+                      .collect(Collectors.toSet());
+   }
+
+   @Override
    public List<Organization> getOrganizations(final DatabaseQuery query) {
       Query<MorphiaOrganization> organizationQuery = createOrganizationQuery(query);
       FindOptions findOptions = createFindOptions(query);
@@ -120,7 +130,7 @@ public class MorphiaOrganizationDao extends SystemScopedDao implements Organizat
 
    private Query<MorphiaPermission> createPermissionQuery(String name) {
       return datastore.createQuery(MorphiaPermission.class)
-                      .filter(MorphiaPermission.NAME, name)
+                      .filter(MorphiaPermission.ID, name)
                       .field(MorphiaPermission.ROLES).in(Collections.singleton(Role.READ.toString()));
    }
 

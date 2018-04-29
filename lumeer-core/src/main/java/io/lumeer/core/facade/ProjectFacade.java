@@ -25,6 +25,8 @@ import io.lumeer.api.model.Project;
 import io.lumeer.api.model.ResourceType;
 import io.lumeer.api.model.Role;
 import io.lumeer.api.model.User;
+import io.lumeer.core.AuthenticatedUserGroups;
+import io.lumeer.core.exception.NoPermissionException;
 import io.lumeer.core.model.SimplePermission;
 import io.lumeer.storage.api.dao.CollectionDao;
 import io.lumeer.storage.api.dao.DocumentDao;
@@ -62,9 +64,12 @@ public class ProjectFacade extends AbstractFacade {
    @Inject
    private LinkInstanceDao linkInstanceDao;
 
+   @Inject
+   private AuthenticatedUserGroups authenticatedUserGroups;
+
    public Project createProject(Project project) {
       checkOrganizationWriteRole();
-      Permission defaultUserPermission = new SimplePermission(authenticatedUser.getCurrentUsername(), Project.ROLES);
+      Permission defaultUserPermission = new SimplePermission(authenticatedUser.getCurrentUserId(), Project.ROLES);
       project.getPermissions().updateUserPermissions(defaultUserPermission);
 
       Project storedProject = projectDao.createProject(project);
@@ -81,7 +86,7 @@ public class ProjectFacade extends AbstractFacade {
       keepStoredPermissions(project, storedProject.getPermissions());
       Project updatedProject = projectDao.updateProject(storedProject.getId(), project);
 
-      return keepOnlyActualUserRoles(updatedProject);
+      return mapResource(updatedProject);
    }
 
    public void deleteProject(final String projectCode) {
@@ -97,27 +102,36 @@ public class ProjectFacade extends AbstractFacade {
       Project project = projectDao.getProjectByCode(projectCode);
       permissionsChecker.checkRole(project, Role.READ);
 
-      return keepOnlyActualUserRoles(project);
+      return mapResource(project);
    }
 
    public List<Project> getProjects() {
-      User user = authenticatedUser.getCurrentUser();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String userId = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
-      DatabaseQuery query = DatabaseQuery.createBuilder(user.getEmail())
+      DatabaseQuery query = DatabaseQuery.createBuilder(userId)
                                          .groups(groups)
                                          .build();
 
       return projectDao.getProjects(query).stream()
-                       .map(this::keepOnlyActualUserRoles)
+                       .map(this::mapResource)
                        .collect(Collectors.toList());
+   }
+
+   public Set<String> getProjectsCodes() {
+      return projectDao.getProjectsCodes();
    }
 
    public Permissions getProjectPermissions(final String projectCode) {
       Project project = projectDao.getProjectByCode(projectCode);
-      permissionsChecker.checkRole(project, Role.MANAGE);
 
-      return project.getPermissions();
+      if (permissionsChecker.hasRole(project, Role.MANAGE)) {
+         return project.getPermissions();
+      } else if (permissionsChecker.hasRole(project, Role.READ)) {
+         return keepOnlyActualUserRoles(project).getPermissions();
+      }
+
+      throw new NoPermissionException(project);
    }
 
    public Set<Permission> updateUserPermissions(final String projectCode, final Permission... userPermissions) {
@@ -130,11 +144,11 @@ public class ProjectFacade extends AbstractFacade {
       return project.getPermissions().getUserPermissions();
    }
 
-   public void removeUserPermission(final String projectCode, final String user) {
+   public void removeUserPermission(final String projectCode, final String userId) {
       Project project = projectDao.getProjectByCode(projectCode);
       permissionsChecker.checkRole(project, Role.MANAGE);
 
-      project.getPermissions().removeUserPermission(user);
+      project.getPermissions().removeUserPermission(userId);
       projectDao.updateProject(project.getId(), project);
    }
 
@@ -148,11 +162,11 @@ public class ProjectFacade extends AbstractFacade {
       return project.getPermissions().getGroupPermissions();
    }
 
-   public void removeGroupPermission(final String projectCode, final String group) {
+   public void removeGroupPermission(final String projectCode, final String groupId) {
       Project project = projectDao.getProjectByCode(projectCode);
       permissionsChecker.checkRole(project, Role.MANAGE);
 
-      project.getPermissions().removeGroupPermission(group);
+      project.getPermissions().removeGroupPermission(groupId);
       projectDao.updateProject(project.getId(), project);
    }
 

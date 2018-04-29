@@ -24,6 +24,7 @@ import io.lumeer.api.model.Permissions;
 import io.lumeer.api.model.Resource;
 import io.lumeer.api.model.Role;
 import io.lumeer.core.AuthenticatedUser;
+import io.lumeer.core.AuthenticatedUserGroups;
 import io.lumeer.core.PermissionsChecker;
 import io.lumeer.core.WorkspaceKeeper;
 import io.lumeer.core.cache.UserCache;
@@ -45,16 +46,26 @@ abstract class AbstractFacade {
    protected UserCache userCache;
 
    @Inject
+   private AuthenticatedUserGroups authenticatedUserGroups;
+
+   @Inject
    protected WorkspaceKeeper workspaceKeeper;
 
    protected <T extends Resource> T keepOnlyActualUserRoles(final T resource) {
       Set<Role> roles = permissionsChecker.getActualRoles(resource);
-      Permission permission = new SimplePermission(authenticatedUser.getUserEmail(), roles);
+      Permission permission = new SimplePermission(authenticatedUser.getCurrentUserId(), roles);
 
       resource.getPermissions().clear();
       resource.getPermissions().updateUserPermissions(permission);
 
       return resource;
+   }
+
+   protected <T extends Resource> T mapResource(final T resource) {
+      if (permissionsChecker.hasRole(resource, Role.MANAGE)) {
+         return resource;
+      }
+      return keepOnlyActualUserRoles(resource);
    }
 
    protected void keepStoredPermissions(final Resource resource, final Permissions storedPermissions) {
@@ -66,8 +77,8 @@ abstract class AbstractFacade {
    }
 
    protected SearchQuery createPaginationQuery(Pagination pagination) {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       return SearchQuery.createBuilder(user)
                         .groups(groups)

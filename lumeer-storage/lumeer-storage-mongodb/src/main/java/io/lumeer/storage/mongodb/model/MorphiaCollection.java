@@ -20,6 +20,7 @@ package io.lumeer.storage.mongodb.model;
 
 import io.lumeer.api.model.Attribute;
 import io.lumeer.api.model.Collection;
+import io.lumeer.api.util.AttributeUtil;
 import io.lumeer.storage.mongodb.model.common.MorphiaResource;
 import io.lumeer.storage.mongodb.model.embedded.MorphiaAttribute;
 
@@ -86,11 +87,15 @@ public class MorphiaCollection extends MorphiaResource implements Collection {
    public void updateAttribute(final String attributeFullName, final Attribute attribute) {
       attributes.removeIf(a -> a.getFullName().equals(attributeFullName));
       attributes.add(MorphiaAttribute.convert(attribute));
+
+      if (!attribute.getFullName().equals(attributeFullName)) {
+         AttributeUtil.renameChildAttributes(attributes, attributeFullName, attribute.getFullName());
+      }
    }
 
    @Override
    public void deleteAttribute(final String attributeFullName) {
-      attributes.removeIf(a -> a.getFullName().startsWith(attributeFullName));
+      attributes.removeIf(attribute -> AttributeUtil.isEqualOrChild(attribute, attributeFullName));
    }
 
    @Override

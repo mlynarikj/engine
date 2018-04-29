@@ -24,6 +24,7 @@ import io.lumeer.api.model.Collection;
 import io.lumeer.api.model.LinkType;
 import io.lumeer.api.model.SuggestionType;
 import io.lumeer.api.model.View;
+import io.lumeer.core.AuthenticatedUserGroups;
 import io.lumeer.storage.api.dao.CollectionDao;
 import io.lumeer.storage.api.dao.LinkTypeDao;
 import io.lumeer.storage.api.dao.ViewDao;
@@ -51,6 +52,9 @@ public class SuggestionFacade extends AbstractFacade {
 
    @Inject
    private LinkTypeDao linkTypeDao;
+
+   @Inject
+   private AuthenticatedUserGroups authenticatedUserGroups;
 
    public JsonSuggestions suggest(String text, SuggestionType type) {
       switch (type) {
@@ -137,8 +141,8 @@ public class SuggestionFacade extends AbstractFacade {
    }
 
    private SuggestionQuery.Builder createBuilderForSuggestionQuery(String text, int limit) {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       return SuggestionQuery.createBuilder(user).groups(groups)
                             .text(text)
@@ -146,8 +150,8 @@ public class SuggestionFacade extends AbstractFacade {
    }
 
    private SearchQuery createSimpleSearchQuery() {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       return SearchQuery.createBuilder(user).groups(groups)
                         .build();

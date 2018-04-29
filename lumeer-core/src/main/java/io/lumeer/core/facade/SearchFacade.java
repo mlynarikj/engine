@@ -22,7 +22,9 @@ import io.lumeer.api.model.Collection;
 import io.lumeer.api.model.Document;
 import io.lumeer.api.model.Query;
 import io.lumeer.api.model.Resource;
+import io.lumeer.api.model.Role;
 import io.lumeer.api.model.View;
+import io.lumeer.core.AuthenticatedUserGroups;
 import io.lumeer.core.util.FilterParser;
 import io.lumeer.engine.api.data.DataDocument;
 import io.lumeer.storage.api.dao.CollectionDao;
@@ -58,6 +60,9 @@ public class SearchFacade extends AbstractFacade {
 
    @Inject
    private ViewDao viewDao;
+
+   @Inject
+   private AuthenticatedUserGroups authenticatedUserGroups;
 
    public List<Collection> searchCollections(Query query) {
       Set<Collection> collections = new HashSet<>();
@@ -96,8 +101,7 @@ public class SearchFacade extends AbstractFacade {
    }
 
    private boolean isEmptyQueryExceptDocumentIds(final Query query) {
-      return (query.getFilters() == null || query.getFilters().isEmpty()) && (query.getFulltext() == null || query.getFulltext().isEmpty()) &&
-            (query.getCollectionCodes() == null || query.getCollectionCodes().isEmpty()) && (query.getCollectionIds() == null || query.getCollectionIds().isEmpty());
+      return (query.getFilters() == null || query.getFilters().isEmpty()) && (query.getFulltext() == null || query.getFulltext().isEmpty()) && (query.getCollectionIds() == null || query.getCollectionIds().isEmpty());
    }
 
    private boolean isOnlyDocumentsIdsQuery(final Query query) {
@@ -112,7 +116,7 @@ public class SearchFacade extends AbstractFacade {
    }
 
    private boolean collectionQueryIsNotEmpty(Query query) {
-      return (query.getCollectionCodes() != null && !query.getCollectionCodes().isEmpty()) || (query.getCollectionIds() != null && !query.getCollectionIds().isEmpty());
+      return query.getCollectionIds() != null && !query.getCollectionIds().isEmpty();
    }
 
    private List<Document> getDocumentsByIds(Set<String> documentIds) {
@@ -136,15 +140,12 @@ public class SearchFacade extends AbstractFacade {
 
       Map<String, DataDocument> dataDocuments = new HashMap<>();
 
-      SearchQuery searchQueryWithFilters = createSearchQuery(query);
-      SearchQuery searchQueryWithoutFilters = createSearchQueryWithoutFilters(query);
-
       for (Collection collection : collections.values()) {
-         SearchQuery usedSearchQuery = collectionIdsFromFilters.contains(collection.getId()) ? searchQueryWithFilters : searchQueryWithoutFilters;
+         SearchQuery usedSearchQuery = collectionIdsFromFilters.contains(collection.getId()) ? createSearchQuery(query) : createSearchQueryWithoutFilters(query);
          dataDocuments.putAll(getDataDocuments(collection.getId(), usedSearchQuery));
       }
 
-      return getDocuments(collections, dataDocuments);
+      return getDocuments(dataDocuments);
    }
 
    private Map<String, DataDocument> getDataDocuments(String collectionId, SearchQuery query) {
@@ -160,7 +161,7 @@ public class SearchFacade extends AbstractFacade {
       SearchQuery searchQuery = createSearchQuery(query);
 
       return collectionDao.getCollections(searchQuery).stream()
-                          .map(this::keepOnlyActualUserRoles)
+                          .map(this::mapResource)
                           .collect(Collectors.toList());
    }
 
@@ -181,7 +182,7 @@ public class SearchFacade extends AbstractFacade {
    private List<View> getViewsByFulltext(Query query) {
       SearchQuery searchQuery = createSearchQuery(query);
       return viewDao.getViews(searchQuery).stream()
-                    .map(this::keepOnlyActualUserRoles)
+                    .map(this::mapResource)
                     .collect(Collectors.toList());
    }
 
@@ -195,11 +196,10 @@ public class SearchFacade extends AbstractFacade {
                           .collect(Collectors.toMap(Resource::getId, Function.identity()));
    }
 
-   private List<Document> getDocuments(Map<String, Collection> collections, Map<String, DataDocument> dataDocuments) {
+   private List<Document> getDocuments(Map<String, DataDocument> dataDocuments) {
       String[] documentIds = dataDocuments.keySet().toArray(new String[] {});
       List<Document> documents = documentDao.getDocumentsByIds(documentIds);
       documents.forEach(document -> {
-         document.setCollectionCode(collections.get(document.getCollectionId()).getCode());
          document.setData(dataDocuments.get(document.getId()));
       });
       return documents;
@@ -233,24 +233,25 @@ public class SearchFacade extends AbstractFacade {
    private SearchQuery.Builder createSearchQueryBuilder(Query query, Set<String> additionalCollectionIds) {
       return createCollectionSearchQueryBuilder(query, additionalCollectionIds)
             .documentIds(query.getDocumentIds())
-            .fulltext(query.getFulltext());
+            .fulltext(query.getFulltext())
+            .page(query.getPage())
+            .pageSize(query.getPageSize());
    }
 
    private SearchQuery.Builder createCollectionSearchQueryBuilder(Query query, Set<String> additionalCollectionIds) {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       Set<String> collectionIds = query.getCollectionIds() != null ? new HashSet<>(query.getCollectionIds()) : new HashSet<>();
       collectionIds.addAll(additionalCollectionIds);
 
       return SearchQuery.createBuilder(user).groups(groups)
-                        .collectionCodes(query.getCollectionCodes())
                         .collectionIds(collectionIds);
    }
 
    private SearchQuery createDocumentIdsQuery(Set<String> documentIds) {
-      String user = authenticatedUser.getCurrentUsername();
-      Set<String> groups = authenticatedUser.getCurrentUserGroups();
+      String user = authenticatedUser.getCurrentUserId();
+      Set<String> groups = authenticatedUserGroups.getCurrentUserGroups();
 
       return SearchQuery.createBuilder(user).groups(groups)
                         .documentIds(documentIds)

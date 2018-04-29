@@ -19,8 +19,10 @@
 package io.lumeer.api.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -35,17 +37,21 @@ public class User {
    private String id;
    private String name;
    private String email;
+
+   @JsonIgnore
+   private String keycloakId;
    private Map<String, Set<String>> groups;
 
    public User(final String email) {
       this.email = email;
+      this.groups = new HashMap<>();
    }
 
    @JsonCreator
    public User(@JsonProperty(ID) final String id,
          @JsonProperty(NAME) final String name,
          @JsonProperty(EMAIL) final String email,
-         @JsonProperty(GROUPS) final Map<String, Set<String>>  groups) {
+         @JsonProperty(GROUPS) final Map<String, Set<String>> groups) {
       this.id = id;
       this.name = name;
       this.email = email;
@@ -74,6 +80,14 @@ public class User {
 
    public void setEmail(final String email) {
       this.email = email;
+   }
+
+   public String getKeycloakId() {
+      return keycloakId;
+   }
+
+   public void setKeycloakId(final String keycloakId) {
+      this.keycloakId = keycloakId;
    }
 
    public Map<String, Set<String>> getGroups() {

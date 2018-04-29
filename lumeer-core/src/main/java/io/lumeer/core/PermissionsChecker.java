@@ -40,12 +40,16 @@ public class PermissionsChecker {
    @Inject
    private AuthenticatedUser authenticatedUser;
 
+   @Inject
+   private AuthenticatedUserGroups authenticatedUserGroups;
+
    public PermissionsChecker() {
    }
 
-   PermissionsChecker(UserCache userCache, AuthenticatedUser authenticatedUser) {
+   PermissionsChecker(UserCache userCache, AuthenticatedUser authenticatedUser, AuthenticatedUserGroups authenticatedUserGroups) {
       this.userCache = userCache;
       this.authenticatedUser = authenticatedUser;
+      this.authenticatedUserGroups = authenticatedUserGroups;
    }
 
    /**
@@ -63,7 +67,13 @@ public class PermissionsChecker {
       }
    }
 
-   private boolean hasRole(Resource resource, Role role) {
+   /**
+    * Checks whether the current user has the given role on the resource.
+    * @param resource The resource to be checked.
+    * @param role The required role.
+    * @return True if and only if the user has the given role ont he resource.
+    */
+   public boolean hasRole(Resource resource, Role role) {
       return getActualRoles(resource).contains(role);
    }
 
@@ -75,10 +85,10 @@ public class PermissionsChecker {
     * @return set of actual roles
     */
    public Set<Role> getActualRoles(Resource resource) {
-      String user = authenticatedUser.getUserEmail();
+      String userId = authenticatedUser.getCurrentUserId();
       Set<String> groups = getUserGroups(resource);
 
-      Set<Role> actualRoles = getActualUserRoles(resource.getPermissions().getUserPermissions(), user);
+      Set<Role> actualRoles = getActualUserRoles(resource.getPermissions().getUserPermissions(), userId);
       actualRoles.addAll(getActualGroupRoles(resource.getPermissions().getGroupPermissions(), groups));
       return actualRoles;
    }
@@ -87,19 +97,19 @@ public class PermissionsChecker {
       if (resource instanceof Organization) {
          return Collections.emptySet();
       }
-      return authenticatedUser.getCurrentUserGroups();
+      return authenticatedUserGroups.getCurrentUserGroups();
    }
 
-   private Set<Role> getActualUserRoles(Set<Permission> userRoles, String user) {
+   private Set<Role> getActualUserRoles(Set<Permission> userRoles, String userId) {
       return userRoles.stream()
-                      .filter(entity -> entity.getName().equals(user))
+                      .filter(entity -> entity.getId().equals(userId))
                       .flatMap(entity -> entity.getRoles().stream())
                       .collect(Collectors.toSet());
    }
 
-   private Set<Role> getActualGroupRoles(Set<Permission> groupRoles, Set<String> groups) {
+   private Set<Role> getActualGroupRoles(Set<Permission> groupRoles, Set<String> groupIds) {
       return groupRoles.stream()
-                       .filter(entity -> groups.contains(entity.getName()))
+                       .filter(entity -> groupIds.contains(entity.getId()))
                        .flatMap(entity -> entity.getRoles().stream())
                        .collect(Collectors.toSet());
    }
