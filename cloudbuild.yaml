@@ -1,0 +1,15 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ["build", "-t", "eu.gcr.io/lumeer-bp/app:$COMMIT_SHA", "."]
+- name: 'gcr.io/cloud-builders/docker'
+  args: ["push", "eu.gcr.io/lumeer-bp/app:$COMMIT_SHA"]
+- name: 'gcr.io/cloud-builders/kubectl'
+  args:
+  - 'set'
+  - 'image'
+  - 'deployment'
+  - 'app'
+  - 'app=eu.gcr.io/lumeer-bp/app:$COMMIT_SHA'
+  env:
+  - 'CLOUDSDK_COMPUTE_ZONE=europe-west2-a'
+  - 'CLOUDSDK_CONTAINER_CLUSTER=keycloak-cluster'
