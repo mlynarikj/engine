@@ -12,7 +12,7 @@ RUN cd /opt/jboss \
     && rm -rf web-ui
 
 RUN cd /opt/jboss \
-    && git clone https://github.com/Lumeer/engine.git \
+    && git clone https://github.com/mlynarikj/engine.git \
     && cd engine \
     && mvn clean install -Pproduction -DskipTests \
     && cp war/target/engine-war.war /opt/jboss/wildfly/standalone/deployments \
