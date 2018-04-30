@@ -23,4 +23,4 @@ RUN cd /opt/jboss \
 RUN rm -rf /opt/jboss/wildfly/standalone/configuration/standalone_xml_history/current
 
 USER root
-CMD ["--server-config", "standalone-ha.xml", "-Dlumeer.keycloak.truststore=/usr/jr-domain.ga.jks"]
+CMD ["--server-config", "standalone-full-ha.xml", "-Dlumeer.keycloak.truststore=/usr/jr-domain.ga.jks"]
