@@ -3,7 +3,7 @@ FROM eu.gcr.io/lumeer-bp/devel:latest
 MAINTAINER marvenec@gmail.com
 
 RUN cd /opt/jboss \
-    && git clone https://github.com/Lumeer/web-ui.git \
+    && git clone https://github.com/mlynarikj/web-ui.git \
     && cd web-ui \
     && export LUMEER_ENGINE=lumeer-engine \
     && mvn clean package -DskipTests \
