@@ -20,7 +20,8 @@ RUN cd /opt/jboss \
     && rm -rf engine \
     && rm -rf ~/.m2
 
-RUN rm -rf /opt/jboss/wildfly/standalone/configuration/standalone_xml_history/current
-
 USER root
-CMD ["--server-config", "standalone-ha.xml", "-Dlumeer.keycloak.truststore=/usr/jr-domain.ga.jks"]
+RUN mkdir /etc/truststore \
+    && chown jboss /etc/truststore
+USER jboss
+CMD ["--server-config", "standalone-ha.xml", "-Dlumeer.keycloak.truststore=/etc/truststore/jr-domain.ga.jks"]
