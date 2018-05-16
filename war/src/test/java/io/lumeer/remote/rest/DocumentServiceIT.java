@@ -30,11 +30,13 @@ import io.lumeer.api.dto.JsonProject;
 import io.lumeer.api.model.Collection;
 import io.lumeer.api.model.Document;
 import io.lumeer.api.model.Organization;
+import io.lumeer.api.model.Permission;
 import io.lumeer.api.model.Project;
 import io.lumeer.api.model.Role;
 import io.lumeer.api.model.User;
 import io.lumeer.core.AuthenticatedUser;
 import io.lumeer.core.facade.DocumentFacade;
+import io.lumeer.core.model.SimplePermission;
 import io.lumeer.engine.api.data.DataDocument;
 import io.lumeer.storage.api.dao.CollectionDao;
 import io.lumeer.storage.api.dao.DataDao;
@@ -58,10 +60,8 @@ import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.ws.rs.client.Entity;
 import javax.ws.rs.core.GenericType;
-import javax.ws.rs.core.Link;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
 
 @RunWith(Arquillian.class)
 public class DocumentServiceIT extends ServiceIntegrationTestBase {
@@ -118,6 +118,12 @@ public class DocumentServiceIT extends ServiceIntegrationTestBase {
 
       User user = new User(USER);
       this.user = userDao.createUser(user);
+
+      JsonPermissions organizationPermissions = new JsonPermissions();
+      Permission userPermission = new SimplePermission(this.user.getId(), Organization.ROLES);
+      organizationPermissions.updateUserPermissions(userPermission);
+      storedOrganization.setPermissions(organizationPermissions);
+      organizationDao.updateOrganization(storedOrganization.getId(), storedOrganization);
 
       JsonProject project = new JsonProject();
       project.setCode(PROJECT_CODE);

@@ -22,6 +22,7 @@ import io.lumeer.api.SelectedWorkspace;
 import io.lumeer.api.model.Organization;
 import io.lumeer.api.model.Payment;
 import io.lumeer.api.model.Project;
+import io.lumeer.api.model.ServiceLimits;
 import io.lumeer.core.cache.WorkspaceCache;
 
 import java.util.Optional;
@@ -80,7 +81,6 @@ public class WorkspaceKeeper implements SelectedWorkspace {
       return Payment.ServiceLevel.FREE;
    }
 
-
    public Payment.ServiceLevel getServiceLevel(final Organization organization) {
       if (organization != null) {
          return Optional.ofNullable(workspaceCache.getServiceLevel(organization.getCode())).orElse(Payment.ServiceLevel.FREE);
@@ -89,9 +89,29 @@ public class WorkspaceKeeper implements SelectedWorkspace {
       return Payment.ServiceLevel.FREE;
    }
 
+   public void setServiceLimits(final Organization organization, final ServiceLimits serviceLimits) {
+      if (organization != null) {
+         workspaceCache.setServiceLimits(organization.getCode(), serviceLimits);
+      }
+   }
+
+   public ServiceLimits getServiceLimits(final Organization organization) {
+      if (organization != null) {
+         return workspaceCache.getServiceLimits(organization.getCode());
+      }
+
+      return null;
+   }
+
    public void clearServiceLevel(final Organization organization) {
       if (organization != null) {
          workspaceCache.removeServiceLevel(organization.getCode());
+      }
+   }
+
+   public void clearServiceLimits(final Organization organization) {
+      if (organization != null) {
+         workspaceCache.removeServiceLimits(organization.getCode());
       }
    }
 }

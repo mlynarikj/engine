@@ -18,14 +18,25 @@
  */
 package io.lumeer.core;
 
+import io.lumeer.api.model.Document;
 import io.lumeer.api.model.Organization;
 import io.lumeer.api.model.Permission;
+import io.lumeer.api.model.Project;
 import io.lumeer.api.model.Resource;
+import io.lumeer.api.model.ResourceType;
 import io.lumeer.api.model.Role;
-import io.lumeer.core.cache.UserCache;
+import io.lumeer.api.model.ServiceLimits;
 import io.lumeer.core.exception.NoPermissionException;
+import io.lumeer.core.exception.ServiceLimitsExceededException;
+import io.lumeer.core.facade.OrganizationFacade;
+import io.lumeer.core.facade.PaymentFacade;
+import io.lumeer.engine.annotation.UserDataStorage;
+import io.lumeer.engine.api.data.DataStorage;
+import io.lumeer.engine.api.data.DataStorageStats;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.enterprise.context.RequestScoped;
@@ -35,21 +46,33 @@ import javax.inject.Inject;
 public class PermissionsChecker {
 
    @Inject
-   private UserCache userCache;
-
-   @Inject
    private AuthenticatedUser authenticatedUser;
 
    @Inject
    private AuthenticatedUserGroups authenticatedUserGroups;
 
+   @Inject
+   private PaymentFacade paymentFacade;
+
+   @Inject
+   private WorkspaceKeeper workspaceKeeper;
+
+   @Inject
+   private OrganizationFacade organizationFacade;
+
+   @Inject
+   @UserDataStorage
+   private DataStorage dataStorage;
+
+   private Map<String, Boolean> hasRoleCache = new HashMap<>();
+
    public PermissionsChecker() {
    }
 
-   PermissionsChecker(UserCache userCache, AuthenticatedUser authenticatedUser, AuthenticatedUserGroups authenticatedUserGroups) {
-      this.userCache = userCache;
+   PermissionsChecker(AuthenticatedUser authenticatedUser, AuthenticatedUserGroups authenticatedUserGroups, WorkspaceKeeper workspaceKeeper) {
       this.authenticatedUser = authenticatedUser;
       this.authenticatedUserGroups = authenticatedUserGroups;
+      this.workspaceKeeper = workspaceKeeper;
    }
 
    /**
@@ -62,6 +85,16 @@ public class PermissionsChecker {
     * @throws NoPermissionException
     */
    public void checkRole(Resource resource, Role role) {
+      if (!(resource instanceof Organization) && workspaceKeeper.getOrganization().isPresent()) {
+         if (!hasRole(workspaceKeeper.getOrganization().get(), Role.READ)) {
+            throw new NoPermissionException(resource);
+         }
+         if (!(resource instanceof Project) && workspaceKeeper.getProject().isPresent()) {
+            if (!hasRole(workspaceKeeper.getProject().get(), Role.READ)) {
+               throw new NoPermissionException(resource);
+            }
+         }
+      }
       if (!hasRole(resource, role)) {
          throw new NoPermissionException(resource);
       }
@@ -74,7 +107,7 @@ public class PermissionsChecker {
     * @return True if and only if the user has the given role ont he resource.
     */
    public boolean hasRole(Resource resource, Role role) {
-      return getActualRoles(resource).contains(role);
+      return hasRoleCache.computeIfAbsent(resource.getId() + ":" + role.toString(), id -> getActualRoles(resource).contains(role));
    }
 
    /**
@@ -114,4 +147,55 @@ public class PermissionsChecker {
                        .collect(Collectors.toSet());
    }
 
+   /**
+    * Checks whether it is possible to create more resources of the given type.
+    * @param resource Resource to be created.
+    * @param currentCount Current no of resources of the given type.
+    */
+   public void checkCreationLimits(final Resource resource, final long currentCount) {
+      final ServiceLimits limits = paymentFacade.getCurrentServiceLimits(workspaceKeeper.getOrganization().get());
+
+      if (resource.getType().equals(ResourceType.PROJECT)) {
+         if (limits.getProjects() > 0 && limits.getProjects() <= currentCount) {
+            throw new ServiceLimitsExceededException(limits.getProjects(), resource);
+         }
+      }
+
+      if (resource.getType().equals(ResourceType.COLLECTION)) {
+         if (limits.getFiles() > 0 && limits.getFiles() <= currentCount) {
+            throw new ServiceLimitsExceededException(limits.getFiles(), resource);
+         }
+      }
+   }
+
+   /**
+    * Checks whether it is possible to create more documents.
+    * @param document The document that is about to be created.
+    */
+   public void checkDocumentLimits(final Document document) {
+      final ServiceLimits limits = paymentFacade.getCurrentServiceLimits(workspaceKeeper.getOrganization().get());
+      final DataStorageStats storageStats = dataStorage.getDbStats();
+      long dbSizeMb = storageStats.getDataSize() / (1024 * 1024L);
+
+      if (limits.getDocuments() > 0 && storageStats.getDocuments() >= limits.getDocuments()) {
+         throw new ServiceLimitsExceededException(limits.getDocuments(), storageStats.getDocuments(), document);
+      }
+
+      if (limits.getDbSizeMb() > 0 && limits.getDbSizeMb() < dbSizeMb) {
+         throw new ServiceLimitsExceededException(limits.getDbSizeMb(), dbSizeMb);
+      }
+   }
+
+   /**
+    * Checks whether it is possible to create more users in the current organization.
+    * @param organizationId Organization ID where the user is being added.
+    * @param currentCount Current no of users.
+    */
+   public void checkUserCreationLimits(final String organizationId, final long currentCount) {
+      final ServiceLimits limits = paymentFacade.getCurrentServiceLimits(organizationFacade.getOrganizationById(organizationId));
+
+      if (limits.getUsers() > 0 && limits.getUsers() <= currentCount) {
+         throw new ServiceLimitsExceededException(limits.getUsers());
+      }
+   }
 }

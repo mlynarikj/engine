@@ -18,25 +18,27 @@
  */
 package io.lumeer.core.facade;
 
-import io.lumeer.api.dto.JsonAttribute;
 import io.lumeer.api.model.Attribute;
 import io.lumeer.api.model.Collection;
 import io.lumeer.api.model.Document;
 import io.lumeer.api.model.Pagination;
+import io.lumeer.api.model.Project;
+import io.lumeer.api.model.ResourceType;
 import io.lumeer.api.model.Role;
+import io.lumeer.api.model.User;
 import io.lumeer.core.AuthenticatedUserGroups;
-import io.lumeer.core.util.DocumentUtils;
 import io.lumeer.engine.api.data.DataDocument;
 import io.lumeer.storage.api.dao.CollectionDao;
 import io.lumeer.storage.api.dao.DataDao;
 import io.lumeer.storage.api.dao.DocumentDao;
+import io.lumeer.storage.api.dao.FavoriteItemDao;
 import io.lumeer.storage.api.dao.LinkInstanceDao;
+import io.lumeer.storage.api.exception.ResourceNotFoundException;
 import io.lumeer.storage.api.query.SearchQuery;
 
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,6 +62,9 @@ public class DocumentFacade extends AbstractFacade {
    private DocumentDao documentDao;
 
    @Inject
+   private FavoriteItemDao favoriteItemDao;
+
+   @Inject
    private LinkInstanceDao linkInstanceDao;
 
    @Inject
@@ -68,8 +73,9 @@ public class DocumentFacade extends AbstractFacade {
    public Document createDocument(String collectionId, Document document) {
       Collection collection = collectionDao.getCollectionById(collectionId);
       permissionsChecker.checkRole(collection, Role.WRITE);
+      permissionsChecker.checkDocumentLimits(document);
 
-      DataDocument data = DocumentUtils.checkDocumentKeysValidity(document.getData());
+      DataDocument data = document.getData();
 
       Document storedDocument = createDocument(collection, document);
 
@@ -94,13 +100,13 @@ public class DocumentFacade extends AbstractFacade {
       permissionsChecker.checkRole(collection, Role.WRITE);
 
       DataDocument oldData = dataDao.getData(collectionId, documentId);
-      Set<String> attributesToAdd = new HashSet<>(data.keySet());
-      attributesToAdd.removeAll(oldData.keySet());
+      Set<String> attributesIdsToAdd = new HashSet<>(data.keySet());
+      attributesIdsToAdd.removeAll(oldData.keySet());
 
-      Set<String> attributesToDec = new HashSet<>(oldData.keySet());
-      attributesToDec.removeAll(data.keySet());
+      Set<String> attributesIdsToDec = new HashSet<>(oldData.keySet());
+      attributesIdsToDec.removeAll(data.keySet());
 
-      updateCollectionMetadata(collection, attributesToAdd, attributesToDec, 0);
+      updateCollectionMetadata(collection, attributesIdsToAdd, attributesIdsToDec, 0);
 
       // TODO archive the old document
       DataDocument updatedData = dataDao.updateData(collection.getId(), documentId, data);
@@ -117,10 +123,10 @@ public class DocumentFacade extends AbstractFacade {
 
       DataDocument oldData = dataDao.getData(collectionId, documentId);
 
-      Set<String> attributesToAdd = new HashSet<>(data.keySet());
-      attributesToAdd.removeAll(oldData.keySet());
+      Set<String> attributesIdsToAdd = new HashSet<>(data.keySet());
+      attributesIdsToAdd.removeAll(oldData.keySet());
 
-      updateCollectionMetadata(collection, attributesToAdd, Collections.emptySet(), 0);
+      updateCollectionMetadata(collection, attributesIdsToAdd, Collections.emptySet(), 0);
 
       // TODO archive the old document
       DataDocument patchedData = dataDao.patchData(collection.getId(), documentId, data);
@@ -151,43 +157,64 @@ public class DocumentFacade extends AbstractFacade {
 
       documentDao.deleteDocument(documentId);
       dataDao.deleteData(collection.getId(), documentId);
-      linkInstanceDao.deleteLinkInstances(createQueryForLinkInstances(documentId));
+
+      deleteDocumentBasedData(collectionId, documentId);
+
    }
 
-   private void updateCollectionMetadata(Collection collection, Set<String> attributesToInc, Set<String> attributesToDec, int documentCountDiff) {
-      Map<String, Attribute> oldAttributes = collection.getAttributes().stream()
-                                                       .collect(Collectors.toMap(Attribute::getFullName, Function.identity()));
+   private void deleteDocumentBasedData(String collectionId, String documentId) {
+      linkInstanceDao.deleteLinkInstances(createQueryForLinkInstances(documentId));
+      favoriteItemDao.removeFavoriteDocumentFromUsers(getCurrentProject().getId(), collectionId, documentId);
+   }
 
-      oldAttributes.keySet().forEach(attributeName -> {
-         if (attributesToInc.contains(attributeName)) {
-            Attribute attribute = oldAttributes.get(attributeName);
+   public boolean isFavorite(String documentId) {
+      return getFavoriteDocumentsIds().contains(documentId);
+   }
+
+   public Set<String> getFavoriteDocumentsIds() {
+      String projectId = getCurrentProject().getId();
+      String userId = getCurrentUser().getId();
+
+      return favoriteItemDao.getFavoriteDocumentIds(userId, projectId);
+   }
+
+   public void addFavoriteDocument(String collectionId, String documentId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
+      permissionsChecker.checkRole(collection, Role.WRITE);
+
+      String projectId = getCurrentProject().getId();
+      String userId = getCurrentUser().getId();
+      favoriteItemDao.addFavoriteDocument(userId, projectId, collectionId, documentId);
+   }
+
+   public void removeFavoriteDocument(String collectionId, String documentId) {
+      Collection collection = collectionDao.getCollectionById(collectionId);
+      permissionsChecker.checkRole(collection, Role.WRITE);
+
+      String userId = getCurrentUser().getId();
+      favoriteItemDao.removeFavoriteDocument(userId, documentId);
+   }
+
+   private void updateCollectionMetadata(Collection collection, Set<String> attributesIdsToInc, Set<String> attributesIdsToDec, int documentCountDiff) {
+      Map<String, Attribute> oldAttributes = collection.getAttributes().stream()
+                                                       .collect(Collectors.toMap(Attribute::getId, Function.identity()));
+
+      oldAttributes.keySet().forEach(attributeId -> {
+         if (attributesIdsToInc.contains(attributeId)) {
+            Attribute attribute = oldAttributes.get(attributeId);
             attribute.setUsageCount(attribute.getUsageCount() + 1);
-            attributesToInc.remove(attributeName);
-         } else if (attributesToDec.contains(attributeName)) {
-            Attribute attribute = oldAttributes.get(attributeName);
+            attributesIdsToInc.remove(attributeId);
+         } else if (attributesIdsToDec.contains(attributeId)) {
+            Attribute attribute = oldAttributes.get(attributeId);
             attribute.setUsageCount(Math.max(attribute.getUsageCount() - 1, 0));
          }
 
       });
 
-      Set<Attribute> newAttributes = attributesToInc.stream()
-                                                    .map(attributeName -> new JsonAttribute(extractAttributeName(attributeName), attributeName, Collections.emptySet(), 1))
-                                                    .collect(Collectors.toSet());
-
-      newAttributes.addAll(oldAttributes.values());
-
-      collection.setAttributes(newAttributes);
+      collection.setAttributes(new HashSet<>(oldAttributes.values()));
       collection.setLastTimeUsed(LocalDateTime.now());
       collection.setDocumentsCount(collection.getDocumentsCount() + documentCountDiff);
       collectionDao.updateCollection(collection.getId(), collection);
-   }
-
-   private String extractAttributeName(String attributeName) {
-      if (!attributeName.contains(".")) {
-         return attributeName;
-      }
-      String[] parts = attributeName.split(".");
-      return parts[parts.length - 1];
    }
 
    public Document getDocument(String collectionId, String documentId) {
@@ -209,6 +236,17 @@ public class DocumentFacade extends AbstractFacade {
       Map<String, DataDocument> dataDocuments = getDataDocuments(collection.getId(), pagination);
 
       return getDocuments(dataDocuments);
+   }
+
+   private Project getCurrentProject() {
+      if (!workspaceKeeper.getProject().isPresent()) {
+         throw new ResourceNotFoundException(ResourceType.PROJECT);
+      }
+      return workspaceKeeper.getProject().get();
+   }
+
+   private User getCurrentUser() {
+      return authenticatedUser.getCurrentUser();
    }
 
    private Map<String, DataDocument> getDataDocuments(String collectionId, Pagination pagination) {

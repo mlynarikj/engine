@@ -32,11 +32,13 @@ import io.lumeer.api.model.Collection;
 import io.lumeer.api.model.Document;
 import io.lumeer.api.model.Organization;
 import io.lumeer.api.model.Pagination;
+import io.lumeer.api.model.Permission;
 import io.lumeer.api.model.Project;
 import io.lumeer.api.model.Role;
 import io.lumeer.api.model.User;
 import io.lumeer.core.AuthenticatedUser;
 import io.lumeer.core.WorkspaceKeeper;
+import io.lumeer.core.model.SimplePermission;
 import io.lumeer.engine.IntegrationTestBase;
 import io.lumeer.engine.api.data.DataDocument;
 import io.lumeer.storage.api.dao.CollectionDao;
@@ -54,6 +56,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 
 import java.time.LocalDateTime;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
@@ -114,11 +117,17 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       User user = new User(USER);
       this.user = userDao.createUser(user);
 
+      JsonPermissions organizationPermissions = new JsonPermissions();
+      Permission userPermission = new SimplePermission(this.user.getId(), Organization.ROLES);
+      organizationPermissions.updateUserPermissions(userPermission);
+      storedOrganization.setPermissions(organizationPermissions);
+      organizationDao.updateOrganization(storedOrganization.getId(), storedOrganization);
+
       JsonProject project = new JsonProject();
       project.setCode(PROJECT_CODE);
 
       JsonPermissions projectPermissions = new JsonPermissions();
-      projectPermissions.updateUserPermissions(new JsonPermission( this.user.getId(), Project.ROLES.stream().map(Role::toString).collect(Collectors.toSet())));
+      projectPermissions.updateUserPermissions(new JsonPermission(this.user.getId(), Project.ROLES.stream().map(Role::toString).collect(Collectors.toSet())));
       project.setPermissions(projectPermissions);
       Project storedProject = projectDao.createProject(project);
 
@@ -131,6 +140,7 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       collectionPermissions.updateUserPermissions(new JsonPermission(this.user.getId(), Project.ROLES.stream().map(Role::toString).collect(Collectors.toSet())));
       JsonCollection jsonCollection = new JsonCollection(null, COLLECTION_NAME, COLLECTION_ICON, COLLECTION_COLOR, collectionPermissions);
       jsonCollection.setDocumentsCount(0);
+      jsonCollection.setLastAttributeNum(0);
       collection = collectionDao.createCollection(jsonCollection);
    }
 
@@ -151,7 +161,7 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       Collection storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(0);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).isEmpty();
+      assertThat(storedCollection.getAttributes()).extracting(Attribute::getName).isEmpty();
 
       Document document = prepareDocument();
 
@@ -181,9 +191,6 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(1);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).containsOnly(KEY1, KEY2);
-      assertThat(findCollectionAttribute(storedCollection, KEY1).getUsageCount()).isEqualTo(1);
-      assertThat(findCollectionAttribute(storedCollection, KEY2).getUsageCount()).isEqualTo(1);
    }
 
    @Test
@@ -194,9 +201,6 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       Collection storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(1);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).containsOnly(KEY1, KEY2);
-      assertThat(findCollectionAttribute(storedCollection, KEY1).getUsageCount()).isEqualTo(1);
-      assertThat(findCollectionAttribute(storedCollection, KEY2).getUsageCount()).isEqualTo(1);
 
       DataDocument data = new DataDocument(KEY1, VALUE2);
 
@@ -224,9 +228,6 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(1);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).containsOnly(KEY1, KEY2);
-      assertThat(findCollectionAttribute(storedCollection, KEY1).getUsageCount()).isEqualTo(1);
-      assertThat(findCollectionAttribute(storedCollection, KEY2).getUsageCount()).isEqualTo(0);
    }
 
    @Test
@@ -237,9 +238,6 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       Collection storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(1);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).containsOnly(KEY1, KEY2);
-      assertThat(findCollectionAttribute(storedCollection, KEY1).getUsageCount()).isEqualTo(1);
-      assertThat(findCollectionAttribute(storedCollection, KEY2).getUsageCount()).isEqualTo(1);
 
       DataDocument data = new DataDocument(KEY1, VALUE2);
 
@@ -267,9 +265,6 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(1);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).containsOnly(KEY1, KEY2);
-      assertThat(findCollectionAttribute(storedCollection, KEY1).getUsageCount()).isEqualTo(1);
-      assertThat(findCollectionAttribute(storedCollection, KEY2).getUsageCount()).isEqualTo(1);
    }
 
    @Test
@@ -279,9 +274,6 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       Collection storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(1);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).containsOnly(KEY1, KEY2);
-      assertThat(findCollectionAttribute(storedCollection, KEY1).getUsageCount()).isEqualTo(1);
-      assertThat(findCollectionAttribute(storedCollection, KEY2).getUsageCount()).isEqualTo(1);
 
       documentFacade.deleteDocument(collection.getId(), id);
 
@@ -293,9 +285,6 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       storedCollection = collectionDao.getCollectionById(collection.getId());
 
       assertThat(storedCollection.getDocumentsCount()).isEqualTo(0);
-      assertThat(storedCollection.getAttributes()).extracting(Attribute::getFullName).containsOnly(KEY1, KEY2);
-      assertThat(findCollectionAttribute(storedCollection, KEY1).getUsageCount()).isEqualTo(0);
-      assertThat(findCollectionAttribute(storedCollection, KEY2).getUsageCount()).isEqualTo(0);
    }
 
    @Test
@@ -331,9 +320,42 @@ public class DocumentFacadeIT extends IntegrationTestBase {
       assertThat(documents).extracting(Document::getId).containsOnly(id1, id2);
    }
 
-   private Attribute findCollectionAttribute(Collection collection, String attributeName) {
-      return collection.getAttributes().stream()
-                       .filter(attribute -> attribute.getFullName().equals(attributeName))
-                       .findFirst().orElse(null);
+   @Test
+   public void testAddFavoriteDocument() {
+      List<String> ids = new LinkedList<>();
+      for (int i = 0; i < 10; i++) {
+         ids.add(createDocument().getId());
+      }
+
+      assertThat(documentFacade.getFavoriteDocumentsIds()).isEmpty();
+
+      documentFacade.addFavoriteDocument(collection.getId(), ids.get(0));
+      documentFacade.addFavoriteDocument(collection.getId(), ids.get(3));
+      documentFacade.addFavoriteDocument(collection.getId(), ids.get(5));
+
+      assertThat(documentFacade.getFavoriteDocumentsIds()).containsOnly(ids.get(0), ids.get(3), ids.get(5));
+
+      for (int i = 0; i < 10; i++) {
+         assertThat(documentFacade.isFavorite(ids.get(i))).isEqualTo(i == 0 || i == 3 || i == 5);
+      }
+   }
+
+   @Test
+   public void testRemoveFavoriteCollection() {
+      List<String> ids = new LinkedList<>();
+      for (int i = 0; i < 10; i++) {
+         ids.add(createDocument().getId());
+      }
+
+      documentFacade.addFavoriteDocument(collection.getId(), ids.get(1));
+      documentFacade.addFavoriteDocument(collection.getId(), ids.get(2));
+      documentFacade.addFavoriteDocument(collection.getId(), ids.get(9));
+
+      assertThat(documentFacade.getFavoriteDocumentsIds()).containsOnly(ids.get(1), ids.get(2), ids.get(9));
+
+      documentFacade.removeFavoriteDocument(collection.getId(), ids.get(1));
+      documentFacade.removeFavoriteDocument(collection.getId(), ids.get(9));
+
+      assertThat(documentFacade.getFavoriteDocumentsIds()).containsOnly(ids.get(2));
    }
 }

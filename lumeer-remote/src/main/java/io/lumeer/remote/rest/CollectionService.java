@@ -29,8 +29,11 @@ import io.lumeer.api.model.Permission;
 import io.lumeer.api.model.Permissions;
 import io.lumeer.core.facade.CollectionFacade;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import javax.annotation.PostConstruct;
 import javax.enterprise.context.RequestScoped;
 import javax.inject.Inject;
@@ -71,15 +74,21 @@ public class CollectionService extends AbstractService {
    public Collection createCollection(JsonCollection collection) {
       Collection storedCollection = collectionFacade.createCollection(collection);
 
-      return JsonCollection.convert(storedCollection);
+      JsonCollection returnCollection = JsonCollection.convert(storedCollection);
+      returnCollection.setFavorite(false);
+
+      return returnCollection;
    }
 
    @PUT
    @Path("{collectionId}")
-   public Response updateCollection(@PathParam("collectionId") String collectionId, JsonCollection collection) {
+   public Collection updateCollection(@PathParam("collectionId") String collectionId, JsonCollection collection) {
       Collection storedCollection = collectionFacade.updateCollection(collectionId, collection);
 
-      return Response.ok(JsonCollection.convert(storedCollection)).build();
+      JsonCollection returnCollection = JsonCollection.convert(storedCollection);
+      returnCollection.setFavorite(collectionFacade.isFavorite(returnCollection.getId()));
+
+      return returnCollection;
    }
 
    @DELETE
@@ -92,17 +101,27 @@ public class CollectionService extends AbstractService {
 
    @GET
    @Path("{collectionId}")
-   public JsonCollection getCollection(@PathParam("collectionId") String collectionCode) {
-      Collection collection = collectionFacade.getCollection(collectionCode);
-      return JsonCollection.convert(collection);
+   public JsonCollection getCollection(@PathParam("collectionId") String collectionId) {
+      Collection collection = collectionFacade.getCollection(collectionId);
+
+      JsonCollection returnCollection = JsonCollection.convert(collection);
+      returnCollection.setFavorite(collectionFacade.isFavorite(returnCollection.getId()));
+
+      return returnCollection;
    }
 
    @GET
    public List<JsonCollection> getCollections(@QueryParam("page") Integer page, @QueryParam("pageSize") Integer pageSize) {
       Pagination pagination = new Pagination(page, pageSize);
 
-      List<Collection> collections = collectionFacade.getCollections(pagination);
-      return JsonCollection.convert(collections);
+      Set<String> favoriteCollectionIds = collectionFacade.getFavoriteCollectionsIds();
+      return collectionFacade.getCollections(pagination).stream()
+                             .map(coll -> {
+                                JsonCollection collection = JsonCollection.convert(coll);
+                                collection.setFavorite(favoriteCollectionIds.contains(collection.getId()));
+                                return collection;
+                             })
+                             .collect(Collectors.toList());
    }
 
    @GET
@@ -119,24 +138,32 @@ public class CollectionService extends AbstractService {
       return JsonAttribute.convert(attributes);
    }
 
+   @POST
+   @Path("{collectionId}/attributes")
+   public Set<JsonAttribute> createCollectionAttributes(@PathParam("collectionId") String collectionId, List<JsonAttribute> attributes) {
+      Set<Attribute> storedAttributes = new HashSet<>(collectionFacade.createCollectionAttributes(collectionId, attributes));
+
+      return JsonAttribute.convert(storedAttributes);
+   }
+
    @PUT
-   @Path("{collectionId}/attributes/{attributeFullName}")
-   public JsonAttribute updateCollectionAttribute(@PathParam("collectionId") String collectionId, @PathParam("attributeFullName") String attributeFullName, JsonAttribute attribute) {
-      Attribute storedAttribute = collectionFacade.updateCollectionAttribute(collectionId, attributeFullName, attribute);
+   @Path("{collectionId}/attributes/{attributeId}")
+   public JsonAttribute updateCollectionAttribute(@PathParam("collectionId") String collectionId, @PathParam("attributeId") String attributeId, JsonAttribute attribute) {
+      Attribute storedAttribute = collectionFacade.updateCollectionAttribute(collectionId, attributeId, attribute);
 
       return JsonAttribute.convert(storedAttribute);
    }
 
    @DELETE
-   @Path("{collectionId}/attributes/{attributeFullName}")
-   public Response deleteCollectionAttribute(@PathParam("collectionId") String collectionId, @PathParam("attributeFullName") String attributeFullName) {
-      if (attributeFullName == null) {
-         throw new BadRequestException("attributeFullName");
+   @Path("{collectionId}/attributes/{attributeId}")
+   public Response deleteCollectionAttribute(@PathParam("collectionId") String collectionId, @PathParam("attributeId") String attributeId) {
+      if (attributeId == null) {
+         throw new BadRequestException("attributeId");
       }
 
-      collectionFacade.deleteCollectionAttribute(collectionId, attributeFullName);
+      collectionFacade.deleteCollectionAttribute(collectionId, attributeId);
 
-      return Response.ok().link(getParentUri(attributeFullName), "parent").build();
+      return Response.ok().link(getParentUri(attributeId), "parent").build();
    }
 
    @GET
@@ -174,6 +201,22 @@ public class CollectionService extends AbstractService {
       collectionFacade.removeGroupPermission(collectionId, groupId);
 
       return Response.ok().link(getParentUri("groups", groupId), "parent").build();
+   }
+
+   @POST
+   @Path("{collectionId}/favorite")
+   public Response addFavoriteCollection(@PathParam("collectionId") String collectionId) {
+      collectionFacade.addFavoriteCollection(collectionId);
+
+      return Response.ok().build();
+   }
+
+   @DELETE
+   @Path("{collectionId}/favorite")
+   public Response removeFavoriteCollection(@PathParam("collectionId") String collectionId) {
+      collectionFacade.removeFavoriteCollection(collectionId);
+
+      return Response.ok().build();
    }
 
 }

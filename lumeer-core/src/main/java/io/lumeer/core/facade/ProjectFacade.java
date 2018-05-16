@@ -24,12 +24,12 @@ import io.lumeer.api.model.Permissions;
 import io.lumeer.api.model.Project;
 import io.lumeer.api.model.ResourceType;
 import io.lumeer.api.model.Role;
-import io.lumeer.api.model.User;
 import io.lumeer.core.AuthenticatedUserGroups;
 import io.lumeer.core.exception.NoPermissionException;
 import io.lumeer.core.model.SimplePermission;
 import io.lumeer.storage.api.dao.CollectionDao;
 import io.lumeer.storage.api.dao.DocumentDao;
+import io.lumeer.storage.api.dao.FavoriteItemDao;
 import io.lumeer.storage.api.dao.LinkInstanceDao;
 import io.lumeer.storage.api.dao.LinkTypeDao;
 import io.lumeer.storage.api.dao.ProjectDao;
@@ -65,10 +65,15 @@ public class ProjectFacade extends AbstractFacade {
    private LinkInstanceDao linkInstanceDao;
 
    @Inject
+   private FavoriteItemDao favoriteItemDao;
+
+   @Inject
    private AuthenticatedUserGroups authenticatedUserGroups;
 
    public Project createProject(Project project) {
       checkOrganizationWriteRole();
+      checkProjectCreate(project);
+
       Permission defaultUserPermission = new SimplePermission(authenticatedUser.getCurrentUserId(), Project.ROLES);
       project.getPermissions().updateUserPermissions(defaultUserPermission);
 
@@ -184,6 +189,9 @@ public class ProjectFacade extends AbstractFacade {
       viewDao.deleteViewsRepository(project);
       linkTypeDao.deleteLinkTypeRepository(project);
       linkInstanceDao.deleteLinkInstanceRepository(project);
+
+      favoriteItemDao.removeFavoriteCollectionsByProjectFromUsers(project.getId());
+      favoriteItemDao.removeFavoriteDocumentsByProjectFromUsers(project.getId());
    }
 
    private void checkOrganizationWriteRole() {
@@ -193,5 +201,14 @@ public class ProjectFacade extends AbstractFacade {
 
       Organization organization = workspaceKeeper.getOrganization().get();
       permissionsChecker.checkRole(organization, Role.WRITE);
+   }
+
+   public int getCollectionsCount(Project project) {
+      collectionDao.setProject(project);
+      return (int) collectionDao.getCollectionsCount();
+   }
+
+   private void checkProjectCreate(final Project project) {
+      permissionsChecker.checkCreationLimits(project, projectDao.getProjectsCount());
    }
 }

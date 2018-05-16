@@ -37,9 +37,13 @@ public interface ProjectDao {
 
    Project createProject(Project project);
 
+   Project getProjectById(String projectId);
+
    Project getProjectByCode(String projectCode);
 
    List<Project> getProjects(DatabaseQuery query);
+
+   long getProjectsCount();
 
    void deleteProject(String projectId);
 
