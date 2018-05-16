@@ -20,6 +20,8 @@ RUN cd /opt/jboss \
     && rm -rf engine \
     && rm -rf ~/.m2
 
+RUN rm /opt/jboss/wildfly/standalone/configuration/standalone_xml_history/current/*
+
 USER root
 RUN mkdir /etc/truststore \
     && chown jboss /etc/truststore
